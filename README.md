@@ -1,604 +1,204 @@
-![Docker Cloud Automated build](https://img.shields.io/docker/cloud/automated/freshrss/freshrss.svg)
-![Docker Pulls](https://img.shields.io/docker/pulls/freshrss/freshrss.svg)
+## 群晖nas自用
 
-# Deploy FreshRSS with Docker
+### 感谢以下项目:
 
-Our official images are available on [Docker Hub](https://hub.docker.com/r/freshrss/freshrss/).
+[https://hub.docker.com/r/cthulhoo/ttrss-fpm-pgsql-static](https://hub.docker.com/r/cthulhoo/ttrss-fpm-pgsql-static "https://hub.docker.com/r/cthulhoo/ttrss-fpm-pgsql-static")  
+[https://github.com/docker-library/postgres](https://github.com/docker-library/postgres "https://github.com/docker-library/postgres")   
+[https://github.com/HenryQW/mercury-parser-api](https://github.com/HenryQW/mercury-parser-api "https://github.com/HenryQW/mercury-parser-api")  
+[https://github.com/HenryQW/mercury_fulltext](https://github.com/HenryQW/mercury_fulltext "https://github.com/HenryQW/mercury_fulltext")  
+[https://github.com/feediron/ttrss_plugin-feediron](https://github.com/feediron/ttrss_plugin-feediron "https://github.com/feediron/ttrss_plugin-feediron")     
+[https://github.com/DigitalDJ/tinytinyrss-fever-plugin](https://github.com/DigitalDJ/tinytinyrss-fever-plugin "https://github.com/DigitalDJ/tinytinyrss-fever-plugin")      
+[https://github.com/levito/tt-rss-feedly-theme](https://github.com/levito/tt-rss-feedly-theme "https://github.com/levito/tt-rss-feedly-theme")
 
-## Install Docker
+### 版本：
+
+|名称|版本|说明|
+|:-|:-|:-|
+|ttrss|plugins-22.06-b148d2f51|amd64;arm64v8;arm32v7,集成postgres数据库(PostgreSQL-14.1),mercury-parser-api及一些常用插件|
+
+#### 版本升级注意：
+
+* 22.01升级postgres数据库到14.1，并添加自动更新tt-rss及postgres数据库导入导出脚本。
+* 从21.02开始ttrss不再支持以前配置文件，需用环境变量重新设置，更新前请备份数据并清空tt-rss配置文件夹。
+* 从20.09开始ttrss不再支持非80及443端口订阅。
+* plugins-19.8升级新版需重新导入导出数据库(旧数据库不兼容)，移除配置文件夹themes.local(feedly旧主题不兼容)。
 
-See <https://docs.docker.com/get-docker/>
+### Postgres数据库导入导出
+
+#### 例如：数据库配置为[postgre:/var/lib/postgresql/data]
+
+#### 群晖步骤：
+
+1. 旧版ttrss容器-终端机新增-bash-执行导出命令[完成后config里会出现db.sql]
+2. 清空postgre文件夹，预防意外可重命名(例如:postgre.bak)，再新建一个
+3. 新建新版容器[配置与旧版一样(需暂时更改环境变量端口[TTRSS_DB_PORT=5432]防止tt-rss对postgre初始化)
+4. 启动容器-终端机新增-bash-执行导入命令[需PostgreSQL初始化完成(空文件夹postgre重新有内容)]
+5. 更改回环境变量端口[TTRSS_DB_PORT=5432]，重启容器登录ttrss按提示更新数据库
+
+#### 注意：
+
+* db.sql为导出导入的数据库文件,Postgres数据库不同版本不兼容。导入数据库后全新安装,tt-rss配置界面需选择 Skip initialization。
 
-Example for Linux Debian / Ubuntu:
+|标题|命令|举例|
+|:-|:-|:-|
+|导出|pg_dump -U PostgreSQL用户名 -f /config/db.sql -d PostgreSQL数据库名称| pg_dump -U ttrss -f /config/db.sql -d ttrss|
+|导入|psql -d PostgreSQL数据库名称 -f /config/db.sql -U PostgreSQL用户名|psql -d ttrss -f /config/db.sql -U ttrss|
+
+### docker命令行设置：
+
+1. 下载镜像
+
+       docker pull johngong/tt-rss:latest
+
+2. 创建ttrss容器
+
+        docker create  \
+           --name=ttrss  \
+           -p 80:80 \
+           -p 5432:5432 \
+           -p 3000:3000 \
+           -v /配置文件位置:/config  \
+           -v /PostgreSQL存储数据的位置:/var/lib/postgresql/data  \
+           -e UID=1000  \
+           -e GID=1000  \
+           -e POSTGRES_DB=ttrss   \
+           -e POSTGRES_USER=ttrss   \
+           -e POSTGRES_PASSWORD=ttrss   \
+           -e TTRSS_DB_NAME=ttrss   \
+           -e TTRSS_DB_USER=ttrss   \
+           -e TTRSS_DB_PASS=ttrss   \
+           -e TTRSS_SELF_URL_PATH=http://localhost:80/   \
+           --restart unless-stopped  \
+           johngong/tt-rss:latest
+
+3. 运行
+
+       docker start ttrss
+
+4. 停止
+
+       docker stop ttrss
+
+5. 删除容器
+
+       docker rm ttrss
+
+6. 删除镜像
+
+       docker image rm johngong/tt-rss:latest
 
-```sh
-# Install default Docker Compose and automatically the corresponding version of Docker
-apt install docker-compose
-```
-
-## Quick run
-
-Example running FreshRSS (or scroll down to the [Docker Compose](#docker-compose) section instead):
-
-```sh
-docker run -d --restart unless-stopped --log-opt max-size=10m \
-  -p 8080:80 \
-  -e TZ=Europe/Paris \
-  -e 'CRON_MIN=1,31' \
-  -v freshrss_data:/var/www/FreshRSS/data \
-  -v freshrss_extensions:/var/www/FreshRSS/extensions \
-  --name freshrss \
-  freshrss/freshrss
-```
-
-* Exposing on port 8080
-* With a [server timezone](http://php.net/timezones) (default is `UTC`)
-* With an automatic cron job to refresh feeds
-* Saving FreshRSS data in a Docker volume `freshrss_data` and optional extensions in `freshrss_extensions`
-* Using the default image, which is the latest stable release
-
-### Complete installation
-
-Browse to your server <https://freshrss.example.net/> to complete the installation via the FreshRSS Web interface,
-or use the command line described below.
-
-## Command line
-
-See the [CLI documentation](../cli/README.md) for all the commands, which can be applied like:
-
-```sh
-docker exec --user www-data freshrss cli/list-users.php
-```
-
-Example of installation via command line:
-
-```sh
-docker exec --user www-data freshrss cli/do-install.php --default_user freshrss
-
-docker exec --user www-data freshrss cli/create-user.php --user freshrss --password freshrss
-```
-
-> ℹ️ You have to replace `--user www-data` by `--user apache` when using our images based on Linux Alpine.
-
-## Our Docker image variants
-
-The [tags](https://hub.docker.com/r/freshrss/freshrss/tags) correspond to FreshRSS branches and versions:
-
-* `:latest` (default) is the [latest stable release](https://github.com/FreshRSS/FreshRSS/releases/latest)
-* `:edge` is the rolling release, same than our [git `edge` branch](https://github.com/FreshRSS/FreshRSS/tree/edge)
-* `:x.y.z` are [specific FreshRSS releases](https://github.com/FreshRSS/FreshRSS/releases)
-* `:arm` or `:*-arm` are the ARM `arm32v7` versions (e.g., for Raspberry Pi).
-  * For other platforms, see the [custom build section](#build-custom-docker-image)
-
-### Linux: Debian vs. Alpine
-
-Our default image is based on [Debian](https://www.debian.org/). We offer an alternative based on [Alpine](https://alpinelinux.org/) (with the `:alpine` or `*-alpine` tag suffix).
-In [our tests](https://github.com/FreshRSS/FreshRSS/pull/2205) (2019), Alpine was slower,
-while Alpine is smaller on disk (and much faster to build),
-and with newer packages in general (Apache, PHP).
-
-> ℹ️ For some rare systems, one variant might work but not the other, for instance due to kernel incompatibilities.
-
-## Environment variables
-
-* `TZ`: (default is `UTC`) A [server timezone](http://php.net/timezones) (default is `UTC`)
-* `CRON_MIN`: (default is disabled) Define minutes for the built-in cron job to automatically refresh feeds (see below for more advanced options)
-* `FRESHRSS_ENV`: (default is `production`) Enables additional development information if set to `development` (increases the level of logging and ensures that errors are displayed) (see below for more development options)
-* `COPY_LOG_TO_SYSLOG`: (default is `On`) Copy all the logs to syslog
-* `COPY_SYSLOG_TO_STDERR`: (default is `On`) Copy syslog to Standard Error so that it is visible in docker logs
-* `LISTEN`: (default is `0.0.0.0:80`) Modifies the internal Apache listening port, e.g. `0.0.0.0:8080` (for advanced users; useful for [Docker host networking](https://docs.docker.com/network/host/))
-* `FRESHRSS_INSTALL`: automatically pass arguments to command line `cli/do-install.php` (for advanced users; see example in Docker Compose section). Only executed at the very first run (so far), so if you make any change, you need to delete your `freshrss` service, `freshrss_data` volume, before running again.
-* `FRESHRSS_USER`: automatically pass arguments to command line `cli/create-user.php` (for advanced users; see example in Docker Compose section). Only executed at the very first run (so far), so if you make any change, you need to delete your `freshrss` service, `freshrss_data` volume, before running again.
-
-## How to update
-
-```sh
-# Rebuild an image (see build section below) or get a new online version:
-docker pull freshrss/freshrss
-# And then
-docker stop freshrss
-docker rename freshrss freshrss_old
-# See the run section above for the full command
-docker run ... --name freshrss freshrss/freshrss
-# If everything is working, delete the old container
-docker rm freshrss_old
-```
-
-## Build custom Docker image
-
-Building your own Docker image is especially relevant for platforms not available on our Docker Hub,
-which is currently limited to `x64` (Intel, AMD) and `arm32v7`.
-
-```sh
-# First time only
-git clone https://github.com/FreshRSS/FreshRSS.git
-
-cd FreshRSS/
-git pull --ff-only --prune
-docker build --pull --tag freshrss/freshrss:custom -f Docker/Dockerfile .
-```
-
-## Development mode
-
-To contribute to FreshRSS development, you can use one of the Docker images to run and serve the PHP code,
-while reading the source code from your local (git) directory, like the following example:
-
-```sh
-cd ./FreshRSS/
-docker run --rm \
-  -p 8080:80 \
-  -e FRESHRSS_ENV=development \
-  -e TZ=Europe/Paris \
-  -e 'CRON_MIN=1,31' \
-  -v $(pwd):/var/www/FreshRSS \
-  -v freshrss_data:/var/www/FreshRSS/data \
-  --name freshrss \
-  freshrss/freshrss:edge
-```
-
-This will start a server on port 8080, based on your local PHP code, which will show the logs directly in your terminal.
-Press <kbd>Control</kbd>+<kbd>C</kbd> to exit.
-
-### Special development images
-
-> ℹ️ See the [custom build section](#build-custom-docker-image) for an introduction
-
-Two special Dockerfile are provided to reproduce the oldest and newest supported platforms (based on Alpine Linux).
-They need to be compiled manually:
-
-```sh
-cd ./FreshRSS/
-docker build --pull --tag freshrss/freshrss:oldest -f Docker/Dockerfile-Oldest .
-docker build --pull --tag freshrss/freshrss:newest -f Docker/Dockerfile-Newest .
-```
-
-## Supported databases
-
-FreshRSS has a built-in [**SQLite** database](https://sqlite.org/) (easiest and good performance), but more powerful databases are also supported:
-
-### Create an isolated network
-
-```sh
-docker network create freshrss-network
-# Run FreshRSS with a `--net freshrss-network` parameter or use the following command:
-docker network connect freshrss-network freshrss
-```
-
-### [PostgreSQL](https://hub.docker.com/_/postgres/)
-
-```sh
-# If you already have a PostgreSQL instance running, just attach it to the FreshRSS network:
-docker network connect freshrss-network postgres
-
-# Otherwise, start a new PostgreSQL instance, remembering to change the passwords:
-docker run -d --restart unless-stopped --log-opt max-size=10m \
-  -v pgsql_data:/var/lib/postgresql/data \
-  -e POSTGRES_DB=freshrss \
-  -e POSTGRES_USER=freshrss \
-  -e POSTGRES_PASSWORD=freshrss \
-  --net freshrss-network \
-  --name freshrss-db postgres
-```
-
-In the FreshRSS setup, you will then specify the name of the container (`freshrss-db`) as the host for the database.
-
-### [MySQL](https://hub.docker.com/_/mysql/) or [MariaDB](https://hub.docker.com/_/mariadb)
-
-```sh
-# If you already have a MySQL or MariaDB instance running, just attach it to the FreshRSS network:
-docker network connect freshrss-network mysql
-
-# Otherwise, start a new MySQL instance, remembering to change the passwords:
-docker run -d --restart unless-stopped --log-opt max-size=10m \
-  -v mysql_data:/var/lib/mysql \
-  -e MYSQL_ROOT_PASSWORD=rootpass \
-  -e MYSQL_DATABASE=freshrss \
-  -e MYSQL_USER=freshrss \
-  -e MYSQL_PASSWORD=freshrss \
-  --net freshrss-network \
-  --name freshrss-db mysql \
-  --default-authentication-plugin=mysql_native_password
-```
-
-> ℹ️ The parameter `--default-authentication-plugin` is not needed if using PHP 8+ (which is the case for our Alpine images but not yet for our Debian images).
-
-In the FreshRSS setup, you will then specify the name of the container (`freshrss-db`) as the host for the database.
-
-## More deployment options
-
-### Provide default global settings
-
-An optional configuration file can be mounted to `/var/www/FreshRSS/data/config.custom.php` to provide custom settings before the FreshRSS setup,
-on the model of [`config.default.php`](../config.default.php).
-
-### Provide default user settings
-
-An optional configuration file can be mounted to `/var/www/FreshRSS/data/config-user.default.php` to provide custom user settings before a user is created,
-on the model of [`config-user.default.php`](../config-user.default.php).
-
-### Custom Apache configuration (advanced users)
-
-The FreshRSS Docker image uses the [Web server Apache](https://httpd.apache.org/) internally.
-Changes in [Apache `.htaccess` files](https://httpd.apache.org/docs/trunk/howto/htaccess.html) are applied when restarting the container.
-In particular, if you want FreshRSS to use HTTP-based login (instead of the easier Web form login), you can mount your own `./FreshRSS/p/i/.htaccess`:
-
-```sh
-docker run ...
-  -v /your/.htaccess:/var/www/FreshRSS/p/i/.htaccess \
-  -v /your/.htpasswd:/var/www/FreshRSS/data/.htpasswd \
-  ...
-  --name freshrss freshrss/freshrss
-```
-
-Example of `/your/.htaccess` referring to `/your/.htpasswd`:
-
-```apache
-AuthUserFile /var/www/FreshRSS/data/.htpasswd
-AuthName "FreshRSS"
-AuthType Basic
-Require valid-user
-```
-
-### Modify the configuration of a running FreshRSS instance
-
-Some FreshRSS configuration parameters are stored in [`./FreshRSS/data/config.php`](../config.default.php)
-(e.g. `base_url`, `'environment' => 'development'`, database parameters, cURL options, etc.)
-and the following procedure can be used to modify them:
-
-```sh
-# Verify the name of your FreshRSS volume, typically `freshrss_data`
-docker volume ls
-# Verify the path of your FreshRSS volume, typically `/var/lib/docker/volumes/freshrss_data/`
-docker volume inspect freshrss_data
-# Then edit your configuration file
-sudo nano /var/lib/docker/volumes/freshrss_data/_data/config.php
-```
-
-## Docker Compose
-
-First, put variables such as passwords in your `.env` file (see [`example.env`](./freshrss/example.env)):
-
-```ini
-ADMIN_EMAIL=admin@example.net
-ADMIN_PASSWORD=freshrss
-ADMIN_API_PASSWORD=freshrss
-# Published port if running locally
-PUBLISHED_PORT=8080
-# Database credentials (not relevant if using default SQLite database)
-DB_HOST=freshrss-db
-DB_BASE=freshrss
-DB_PASSWORD=freshrss
-DB_USER=freshrss
-```
-
-See [`docker-compose.yml`](./freshrss/docker-compose.yml)
-
-```sh
-cd ./FreshRSS/Docker/freshrss/
-# Update
-docker-compose pull
-# Run
-docker-compose -f docker-compose.yml -f docker-compose-local.yml up -d --remove-orphans
-# Logs
-docker-compose logs -f --timestamps
-# Stop
-docker-compose down --remove-orphans
-```
-
-Detailed (partial) example of Docker Compose for FreshRSS:
-
-```yaml
-version: "2.4"
-
-volumes:
-  data:
-  extensions:
-
-services:
-  freshrss:
-    image: freshrss/freshrss:edge
-    container_name: freshrss
-    restart: unless-stopped
-    logging:
-      options:
-        max-size: 10m
-    volumes:
-      - data:/var/www/FreshRSS/data
-      # Optional volume for storing third-party extensions
-      - extensions:/var/www/FreshRSS/extensions
-      # Optional file providing custom global settings (used before a FreshRSS install)
-      - ./config.custom.php:/var/www/FreshRSS/data/config.custom.php
-      # Optional file providing custom user settings (used before a new user is created)
-      - ./config-user.custom.php:/var/www/FreshRSS/data/config-user.custom.php
-    ports:
-      # If you want to open a port 8080 on the local machine:
-      - "8080:80"
-    environment:
-      TZ: Europe/Paris
-      CRON_MIN: '2,32'
-      FRESHRSS_ENV: development
-      # Optional advanced parameter controlling the internal Apache listening port
-      LISTEN: 0.0.0.0:80
-      # Optional auto-install parameters (the Web interface install is recommended instead):
-      # ⚠️ Parameters below are only used at the very first run (so far).
-      # So if changes are made (or in .env file), first delete the service and volumes.
-      # ℹ️ All the --db-* parameters can be omitted if using built-in SQLite database.
-      FRESHRSS_INSTALL: |-
-        --api_enabled
-        --base_url ${BASE_URL}
-        --db-base ${DB_BASE}
-        --db-host ${DB_HOST}
-        --db-password ${DB_PASSWORD}
-        --db-type pgsql
-        --db-user ${DB_USER}
-        --default_user admin
-        --language en
-      FRESHRSS_USER: |-
-        --api_password ${ADMIN_API_PASSWORD}
-        --email ${ADMIN_EMAIL}
-        --language en
-        --password ${ADMIN_PASSWORD}
-        --user admin
-```
-
-### Docker Compose with PostgreSQL
-
-Example including a [PostgreSQL](https://www.postgresql.org/) database.
-
-See [`docker-compose-db.yml`](./freshrss/docker-compose-db.yml)
-
-```sh
-cd ./FreshRSS/Docker/freshrss/
-# Update
-docker-compose -f docker-compose.yml -f docker-compose-db.yml pull
-# Run
-docker-compose -f docker-compose.yml -f docker-compose-db.yml -f docker-compose-local.yml up -d --remove-orphans
-# Logs
-docker-compose -f docker-compose.yml -f docker-compose-db.yml logs -f --timestamps
-```
-
-### Docker Compose for development
-
-Use the local (git) FreshRSS source code instead of the one inside the Docker container,
-to avoid having to rebuild/restart at each change in the source code.
-
-See [`docker-compose-development.yml`](./freshrss/docker-compose-development.yml)
-
-```sh
-cd ./FreshRSS/Docker/freshrss/
-# Update
-git pull --ff-only --prune
-docker-compose pull
-# Run
-docker-compose -f docker-compose-development.yml -f docker-compose.yml -f docker-compose-local.yml up --remove-orphans
-# Stop with [Control]+[C] and purge
-docker-compose down --remove-orphans --volumes
-```
-
-> ℹ️ You can combine it with `-f docker-compose-db.yml` to spin a PostgreSQL database.
-
-## Run in production
-
-For production, it is a good idea to use a reverse proxy on your host server, providing HTTPS.
-A dedicated solution such as [Træfik](https://traefik.io/traefik/) is recommended
-(or see [alternative options below](#alternative-reverse-proxy-configurations)).
-
-You must first chose a domain (DNS) or sub-domain, e.g. `freshrss.example.net`, and set it in your `.env` file:
-
-```ini
-SERVER_DNS=freshrss.example.net
-```
-
-### Use [Træfik](https://traefik.io/traefik/) reverse proxy
-
-Here is the recommended configuration using automatic [Let’s Encrypt](https://letsencrypt.org/) HTTPS certificates and with a redirection from HTTP to HTTPS.
-
-See [`docker-compose-proxy.yml`](./freshrss/docker-compose-proxy.yml)
-
-```sh
-cd ./FreshRSS/Docker/freshrss/
-# Update
-docker-compose -f docker-compose.yml -f docker-compose-proxy.yml pull
-# Run
-docker-compose -f docker-compose.yml -f docker-compose-proxy.yml up -d --remove-orphans
-# Logs
-docker-compose -f docker-compose.yml -f docker-compose-proxy.yml logs -f --timestamps
-# Stop
-docker-compose -f docker-compose.yml -f docker-compose-proxy.yml down --remove-orphans
-```
-
-> ℹ️ You can combine it with `-f docker-compose-db.yml` to spin a PostgreSQL database.
-
-See [more information about Docker and Let’s Encrypt in Træfik](https://doc.traefik.io/traefik/https/acme/).
-
-## Alternative reverse proxy configurations
-
-### Alternative reverse proxy using Apache
-
-Here is an example of a configuration file for running FreshRSS behind an [Apache 2.4 reverse proxy](https://httpd.apache.org/docs/2.4/howto/reverse_proxy.html) (as a subdirectory).
-You need a working SSL configuration and the Apache modules `proxy`, `proxy_http` and `headers` installed (depends on your distribution) and enabled (`a2enmod proxy proxy_http headers`).
-
-```apache
-ProxyPreserveHost On
-
-<Location /freshrss/>
-	ProxyPass http://127.0.0.1:8080/
-	ProxyPassReverse http://127.0.0.1:8080/
-	RequestHeader set X-Forwarded-Prefix "/freshrss"
-	RequestHeader set X-Forwarded-Proto "https"
-	Require all granted
-	Options none
-</Location>
-```
-
-### Alternative reverse proxy using nginx
-
-#### Hosted in a subdirectory
-
-Here is an example of configuration to run FreshRSS behind an [nginx reverse proxy](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/) (as subdirectory).
-
-```nginx
-upstream freshrss {
-	server 127.0.0.1:8080;
-	keepalive 64;
-}
-
-server {
-	listen 80;
-
-	location / {
-		return 301 https://$host$request_uri;
-	}
-}
-
-server {
-	server_name mywebsite.example.net;
-	listen 443 ssl http2;
-
-	# Other SSL stuff goes here
-
-	location / {
-		try_files $uri $uri/ =404;
-		index index.htm index.html;
-	}
-
-	location /freshrss/ {
-		proxy_pass http://freshrss;
-		add_header X-Frame-Options SAMEORIGIN;
-		add_header X-XSS-Protection "1; mode=block";
-		proxy_redirect off;
-		proxy_buffering off;
-		proxy_set_header Host $host;
-		proxy_set_header X-Real-IP $remote_addr;
-		proxy_set_header X-Forwarded-Prefix /freshrss/;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_set_header X-Forwarded-Proto $scheme;
-		proxy_set_header X-Forwarded-Port $server_port;
-		proxy_read_timeout 90;
-
-		# Forward the Authorization header for the Google Reader API.
-		proxy_set_header Authorization $http_authorization;
-		proxy_pass_header Authorization;
-	}
-}
-```
-
-#### Hosted as domain root
-
-Here is an example of configuration to run FreshRSS behind an Nginx reverse proxy (as domain root).
-
-```nginx
-upstream freshrss {
-	server 127.0.0.1:8080;
-	keepalive 64;
-}
-
-server {
-	listen 80;
-
-	location / {
-		return 301 https://$host$request_uri;
-	}
-}
-
-server {
-	server_name mywebsite.example.net;
-	listen 443 ssl http2;
-
-	# Other SSL stuff goes here
-
-	location / {
-		# The final `/` is important.
-		proxy_pass http://freshrss/;
-		add_header X-Frame-Options SAMEORIGIN;
-		add_header X-XSS-Protection "1; mode=block";
-		proxy_redirect off;
-		proxy_buffering off;
-		proxy_set_header Host $host;
-		proxy_set_header X-Real-IP $remote_addr;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_set_header X-Forwarded-Proto $scheme;
-		proxy_set_header X-Forwarded-Port $server_port;
-		proxy_read_timeout 90;
-
-		# Forward the Authorization header for the Google Reader API.
-		proxy_set_header Authorization $http_authorization;
-		proxy_pass_header Authorization;
-	}
-}
-```
-
-## Cron job to automatically refresh feeds
-
-We recommend a refresh rate of about twice per hour (see *WebSub* / *PubSubHubbub* for real-time updates).
-There are no less than 3 options. Pick a single one.
-
-### Option 1) Cron inside the FreshRSS Docker image
-
-Easiest, built-in solution, also used already in the examples above
-(but your Docker instance will have a second process in the background, without monitoring).
-Just pass the environment variable `CRON_MIN` to your `docker run` command,
-containing a valid cron minute definition such as `'13,43'` (recommended) or `'*/20'`.
-Not passing the `CRON_MIN` environment variable – or setting it to empty string – will disable the cron daemon.
-
-```sh
-docker run ... \
-  -e 'CRON_MIN=13,43' \
-  --name freshrss freshrss/freshrss
-```
-
-### Option 2) Cron on the host machine
-
-Traditional solution.
-Set a cron job up on your host machine, calling the `actualize_script.php` inside the FreshRSS Docker instance.
-Remember not pass the `CRON_MIN` environment variable to your Docker run, to avoid running the built-in cron daemon of option 1.
-
-Example on Debian / Ubuntu: Create `/etc/cron.d/FreshRSS` with:
-
-```text
-7,37 * * * * root docker exec --user www-data freshrss php ./app/actualize_script.php > /tmp/FreshRSS.log 2>&1
-```
-
-### Option 3) Cron as another instance of the same FreshRSS Docker image
-
-For advanced users. Offers good logging and monitoring with auto-restart on failure.
-Watch out to use the same run parameters than in your main FreshRSS instance, for database, networking, and file system.
-See cron option 1 for customising the cron schedule.
-
-#### For the Debian image (default)
-
-```sh
-docker run -d --restart unless-stopped --log-opt max-size=10m \
-  -v freshrss_data:/var/www/FreshRSS/data \
-  -v freshrss_extensions:/var/www/FreshRSS/extensions \
-  -e 'CRON_MIN=17,47' \
-  --net freshrss-network \
-  --name freshrss_cron freshrss/freshrss \
-  cron -f
-```
-
-#### For the Debian image (default) using a custom cron.d fragment
-
-This method gives most flexibility to execute various FreshRSS CLI commands.
-
-```sh
-docker run -d --restart unless-stopped --log-opt max-size=10m \
-  -v freshrss_data:/var/www/FreshRSS/data \
-  -v freshrss_extensions:/var/www/FreshRSS/extensions \
-  -v ./freshrss_crontab:/etc/cron.d/freshrss \
-  --net freshrss-network \
-  --name freshrss_cron freshrss/freshrss \
-  cron -f
-```
-
-#### For the Alpine image
-
-```sh
-docker run -d --restart unless-stopped --log-opt max-size=10m \
-  -v freshrss_data:/var/www/FreshRSS/data \
-  -v freshrss_extensions:/var/www/FreshRSS/extensions \
-  -e 'CRON_MIN=27,57' \
-  --net freshrss-network \
-  --name freshrss_cron freshrss/freshrss:alpine \
-  crond -f -d 6
-```
+### 变量:
+
+|参数|说明|
+|:-|:-|
+| `--name=ttrss` |容器名|
+| `-p 80:80` |tt-rss服务器web端口; 默认用户名:admin,默认密码:password|
+| `-p 5432:5432` |PostgreSQL服务器端口|
+| `-p 3000:3000` |mercury-parser-api 服务端口|
+| ` -v /配置文件位置:/config` |tt-rss配置文件位置|
+| `-v /PostgreSQL存储数据的位置:/var/lib/postgresql/data` |PostgreSQL存储数据的位置|
+| `-e UID=1000` |uid设置,默认为1000,不支持设定为0|
+| `-e GID=1000` |gid设置,默认为1000,不支持设定为0|
+| `-e POSTGRES_UID` |PostgreSQL的uid设置,默认和UID一样，可单独设定|
+| `-e POSTGRES_GID` |PostgreSQL的gid设置,默认和GID一样，可单独设定|
+| `-e POSTGRES_DB=ttrss` |PostgreSQL数据库名称 例如:ttrss|
+| `-e POSTGRES_USER=ttrss` |PostgreSQL用户名 例如:ttrss|
+| `-e POSTGRES_PASSWORD=ttrss` |PostgreSQL密码 例如:ttrss|
+| `-e TTRSS_DB_NAME=ttrss` |PostgreSQL数据库名称(POSTGRES_DB) 例如:ttrss|
+| `-e TTRSS_DB_USER=ttrss` |PostgreSQL用户名(POSTGRES_USER) 例如:ttrss|
+| `-e TTRSS_DB_PASS=ttrss` |PostgreSQL密码(POSTGRES_PASSWORD) 例如:ttrss|
+| `-e TTRSS_DB_TYPE=pgsql` |tt-rss使用的数据库类型,默认设置为pgsql，无需更改|
+| `-e TTRSS_DB_PORT=5432` |tt-rss使用的数据库端口,默认设置为容器内部端口，无需更改|
+| `-e TTRSS_DB_HOST=0.0.0.0` |tt-rss使用的数据库IP,默认设置为容器内部IP，无需更改|
+| `-e TTRSS_SELF_URL_PATH=http://localhost:80/` |tt-rss访问地址,需更改为IP或域名加tt-rss服务器web端口|
+| `-e TTRSS_PLUGINS=auth_internal,fever,mercury_fulltext` |tt-rss默认开启插件|
+| `-e TZ=Asia/Shanghai` |系统时区设置,默认为Asia/Shanghai|
+| `-e TTRSS_ALLOW_PORTS=80,443` |ttrss可订阅的端口，如需1200，可替换80,443为1200|
+| `-e TTRSS_UPDATE_AUTO=true` |自动更新tt-rss(true\|false),默认开启此功能|
+| `-e POSTGRES_DB_DUMP=false` |PostgreSQL备份(true\|false)，不能与还原同时使用，仅启动时执行|
+| `-e POSTGRES_DB_RESTORE=false` |PostgreSQL还原(true\|false)，不能与备份同时使用，仅启动时执行|
+
+### 群晖docker设置：
+
+1. 卷
+
+|参数|说明|
+|:-|:-|
+| `本地文件夹1:/config` |tt-rss配置文件位置|
+| `本地文件夹2:/var/lib/postgresql/data` |PostgreSQL存储数据的位置|
+
+2. 端口
+
+|参数|说明|
+|:-|:-|
+| `本地端口1:80` |tt-rss服务器web端口; 默认用户名:admin,默认密码:password|
+| `本地端口2:3000` |mercury-parser-api 服务端口|
+| `本地端口3:5432` |postgres数据库服务端口|
+
+3. 环境变量：
+
+|参数|说明|
+|:-|:-|
+| `UID=1000` |uid设置,默认为1000,不支持设定为0|
+| `GID=1000` |gid设置,默认为1000,不支持设定为0|
+| `POSTGRES_UID` |PostgreSQL的uid设置,默认用UID值，可单独设定|
+| `POSTGRES_GID` |PostgreSQL的gid设置,默认用GID值，可单独设定|
+| `POSTGRES_DB` |PostgreSQL数据库名称 例如:ttrss|
+| `POSTGRES_USER` |PostgreSQL用户名 例如:ttrss|
+| `POSTGRES_PASSWORD` |PostgreSQL密码 例如:ttrss|
+| `TTRSS_DB_NAME` |PostgreSQL数据库名称(POSTGRES_DB) 例如:ttrss|
+| `TTRSS_DB_USER` |PostgreSQL用户名(POSTGRES_USER) 例如:ttrss|
+| `TTRSS_DB_PASS` |PostgreSQL密码(POSTGRES_PASSWORD) 例如:ttrss|
+| `TTRSS_DB_TYPE=pgsql` |tt-rss使用的数据库类型,默认设置为pgsql，无需更改|
+| `TTRSS_DB_PORT=5432` |tt-rss使用的数据库端口,默认设置为容器内部端口，无需更改|
+| `TTRSS_DB_HOST=0.0.0.0` |tt-rss使用的数据库IP,默认设置为容器内部IP，无需更改|
+| `TTRSS_SELF_URL_PATH=http://localhost:80/` |tt-rss访问地址,需更改为IP或域名加tt-rss服务器web端口|
+| `TTRSS_PLUGINS=auth_internal,fever,mercury_fulltext` |tt-rss默认开启插件|
+| `TZ=Asia/Shanghai` |系统时区设置,默认为Asia/Shanghai|
+| `TTRSS_ALLOW_PORTS=80,443` |ttrss可订阅的端口，如需1200，可替换80,443为1200|
+| `TTRSS_UPDATE_AUTO=true` |自动更新tt-rss(true\|false),默认开启此功能|
+| `POSTGRES_DB_DUMP=false` |PostgreSQL备份(true\|false)，不能与还原同时使用，仅启动时执行|
+| `POSTGRES_DB_RESTORE=false` |PostgreSQL还原(true\|false)，不能与备份同时使用，仅启动时执行|
+
+### 插件设置：
+
+* mercury_fulltext：
+
+  1. 偏好设置启用插件
+  2. 信息源栏 Mercury Fulltext settings 填入 [ip:本地端口2](ip:本地端口2)
+
+### 中文搜索设置：
+
+* zhparser(用于简体中文全文搜索)：
+
+  1. 偏好设置-信息源-默认语言-Chinese_simplified
+
+#### 注意：
+
+* 手动添加zhparser扩展：
+
+|标题|命令|举例|
+|:-|:-|:-|
+|添加zhparser扩展|psql -U PostgreSQL用户名 -d PostgreSQL数据库名称 -a -f /docker-entrypoint-initdb.d/install_extension.sql| psql -U ttrss -d ttrss -a -f /docker-entrypoint-initdb.d/install_extension.sql|
+|更新旧数据库(可选)|psql -U PostgreSQL用户名 -d PostgreSQL数据库名称 -c "update ttrss_entries set tsvector_combined = to_tsvector( 'chinese_simplified' , content)"| psql -U ttrss -d ttrss -c "update ttrss_entries set tsvector_combined = to_tsvector( 'chinese_simplified' , content)"|
+
+### 常见问题:
+
+* https反代：
+
+|问题|解决方法|
+|:-|:-|
+|Please set SELF_URL_PATH to the correct value detected for your server: http://domain.com (you're using: https://domain.com)|config.php 配置文件里添加 $_SERVER['HTTP_X_FORWARDED_PROTO'] = 'https';|
+
+### 客户端软件：
+
+|平台|软件|
+|:-|:-|
+|android|feedme (免费)|
+|linux|NewsFlash(免费),fluent-reader(免费)|
+|mac os x|Reeder 4,fluent-reader(免费)|
+|windows|fluent-reader(免费)|
+
+### 其它：
+
+  * 详见：[https://tt-rss.org/](https://tt-rss.org/)
